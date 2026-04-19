@@ -29,6 +29,7 @@ Hela appen är **en HTML-fil** med inline JS och CSS. Inga bibliotek, ingen buil
 - **Auto-save**: Allt sparas i `localStorage` vid varje förändring
 - **JSON-import/export**: Spara till fil, ladda från fil, dela med andra
 - **SVG-export**: Ladda ner ditt diagram som .svg (öppnas i webbläsare/Figma/etc)
+- **Pan**: Dra på bakgrunden för att flytta hela kartan (sparas också)
 - **Mobil + desktop**: Pointer Events under huven, fungerar likvärdigt med mus och touch
 
 ## Använd den
@@ -42,7 +43,7 @@ Hela appen är **en HTML-fil** med inline JS och CSS. Inga bibliotek, ingen buil
 
 ## Hur det byggdes
 
-Byggt iterativt i 6 steg via Claude Code:
+Byggt iterativt i 7 steg via Claude Code:
 
 1. **Drag-drop boxar + pilar** — kärnfunktionen
 2. **Shape-typer + pil-typer** — uttrycksfullhet
@@ -50,6 +51,7 @@ Byggt iterativt i 6 steg via Claude Code:
 4. **Pil-etiketter + SVG-export** — polish + sharing
 5. **Persistens** — auto-save + JSON I/O
 6. **Mobilstöd** — Pointer Events, touch-targets, dubbeltap
+7. **Pan på canvas** — dra bakgrunden för att flytta hela kartan
 
 Varje iteration startade med en hypotes ("kan användaren X på under Y sekunder?"), byggde minsta möjliga, och verifierades manuellt innan nästa.
 
