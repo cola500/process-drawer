@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<title>Process Drawer</title>
+<style>
+  body { margin: 0; font-family: -apple-system, sans-serif; }
+  header { padding: 12px 16px; background: #f5f5f7; border-bottom: 1px solid #ddd; display: flex; align-items: center; gap: 16px; }
+  button { padding: 8px 14px; font-size: 14px; cursor: pointer; border: 1px solid #333; background: white; border-radius: 6px; }
+  button:hover { background: #eee; }
+  .hint { color: #666; font-size: 13px; }
+  #canvas { position: relative; width: 100vw; height: calc(100vh - 50px); overflow: hidden; background: #fafafa; background-image: radial-gradient(circle, #ddd 1px, transparent 1px); background-size: 20px 20px; }
+  #arrows { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .box { position: absolute; padding: 14px 22px; background: white; border: 2px solid #333; border-radius: 8px; cursor: move; user-select: none; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: center; min-width: 80px; }
+  .box.selected { border-color: #0066ff; background: #e6f0ff; box-shadow: 0 0 0 3px rgba(0,102,255,0.2); }
+  .box.decision { width: 110px; height: 110px; border-radius: 0; transform: rotate(45deg); padding: 0; }
+  .box.decision span { transform: rotate(-45deg); display: block; }
+  .box.terminator { border-radius: 999px; padding: 14px 28px; }
+  .box .del { position: absolute; top: 4px; right: 6px; width: 18px; height: 18px; border-radius: 50%; background: white; border: 1px solid #bbb; color: #666; display: none; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; line-height: 1; font-weight: bold; }
+  .box:hover .del { display: flex; }
+  .box.decision .del { transform: rotate(-45deg); top: 4px; right: 4px; }
+  .box .label[contenteditable="true"] { outline: 2px solid #0066ff; padding: 2px 4px; border-radius: 3px; cursor: text; background: white; }
+  g.conn .del-svg { opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+  g.conn:hover .del-svg { opacity: 1; pointer-events: auto; cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <button data-shape="process">+ Process</button>
+  <button data-shape="decision">+ Beslut</button>
+  <button data-shape="terminator">+ Start/Slut</button>
+  <span class="hint">Dra för att flytta. Klicka två boxar för att koppla. Klicka pil för solid/streckad. Dubbelklick på pil för etikett.</span>
+  <span style="margin-left: auto; display: flex; gap: 8px;">
+    <button id="clear">Rensa</button>
+    <button id="import-btn">↑ JSON</button>
+    <input type="file" id="import-file" accept=".json" style="display: none;">
+    <button id="export-json">↓ JSON</button>
+    <button id="export">↓ SVG</button>
+  </span>
+</header>
+<div id="canvas">
+  <svg id="arrows">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+      </marker>
+    </defs>
+  </svg>
+</div>
+<script>
+  const canvas = document.getElementById('canvas');
+  const svg = document.getElementById('arrows');
+  let counter = 0;
+  let selected = null;
+  let loading = false;
+  const connections = [];
+  const STORAGE_KEY = 'process-drawer-state';
+
+  const labels = { process: 'Process', decision: 'Beslut', terminator: 'Start/Slut' };
+
+  function createBox(shape, labelText, x, y, id) {
+    const box = document.createElement('div');
+    box.className = 'box ' + shape;
+    box.dataset.id = String(id);
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = labelText;
+    box.appendChild(label);
+    const del = document.createElement('div');
+    del.className = 'del';
+    del.textContent = '×';
+    del.title = 'Ta bort';
+    del.addEventListener('mousedown', (e) => e.stopPropagation());
+    del.addEventListener('click', (e) => { e.stopPropagation(); removeBox(box); });
+    box.appendChild(del);
+    box.style.left = x + 'px';
+    box.style.top = y + 'px';
+    canvas.appendChild(box);
+    makeDraggable(box);
+    makeEditable(box, label);
+    return box;
+  }
+
+  document.querySelectorAll('header button[data-shape]').forEach(btn => {
+    btn.onclick = () => {
+      counter++;
+      const shape = btn.dataset.shape;
+      const x = 60 + (counter % 5) * 160;
+      const y = 60 + Math.floor(counter / 5) * 130;
+      createBox(shape, labels[shape] + ' ' + counter, x, y, counter);
+      save();
+    };
+  });
+
+  function makeEditable(box, label) {
+    box.addEventListener('dblclick', (e) => {
+      if (selected) { selected.classList.remove('selected'); selected = null; }
+      label.contentEditable = 'true';
+      label.focus();
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const finish = () => {
+        label.contentEditable = 'false';
+        label.removeEventListener('blur', finish);
+        label.removeEventListener('keydown', onKey);
+        save();
+      };
+      const onKey = (ke) => {
+        if (ke.key === 'Enter') { ke.preventDefault(); label.blur(); }
+        if (ke.key === 'Escape') { ke.preventDefault(); label.blur(); }
+      };
+      label.addEventListener('blur', finish);
+      label.addEventListener('keydown', onKey);
+    });
+  }
+
+  function removeBox(box) {
+    for (let i = connections.length - 1; i >= 0; i--) {
+      if (connections[i].from === box || connections[i].to === box) {
+        connections.splice(i, 1);
+      }
+    }
+    if (selected === box) selected = null;
+    box.remove();
+    renderArrows();
+    save();
+  }
+
+  function makeDraggable(box) {
+    box.addEventListener('mousedown', (e) => {
+      if (e.target.classList.contains('del')) return;
+      if (e.target.getAttribute('contenteditable') === 'true') return;
+      const startLeft = box.offsetLeft;
+      const startTop = box.offsetTop;
+      const startMx = e.clientX;
+      const startMy = e.clientY;
+      let moved = false;
+
+      const onMove = (ev) => {
+        const dx = ev.clientX - startMx;
+        const dy = ev.clientY - startMy;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        box.style.left = (startLeft + dx) + 'px';
+        box.style.top = (startTop + dy) + 'px';
+        renderArrows();
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (!moved) handleClick(box); else save();
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      e.preventDefault();
+    });
+  }
+
+  function handleClick(box) {
+    if (!selected) {
+      selected = box;
+      box.classList.add('selected');
+    } else if (selected === box) {
+      box.classList.remove('selected');
+      selected = null;
+    } else {
+      connections.push({ from: selected, to: box, dashed: false, label: '' });
+      selected.classList.remove('selected');
+      selected = null;
+      renderArrows();
+      save();
+    }
+  }
+
+  function renderArrows() {
+    [...svg.querySelectorAll('g.conn')].forEach(g => g.remove());
+    connections.forEach((conn, idx) => {
+      const a = conn.from, b = conn.to;
+      const ax = a.offsetLeft + a.offsetWidth / 2;
+      const ay = a.offsetTop + a.offsetHeight / 2;
+      const bx = b.offsetLeft + b.offsetWidth / 2;
+      const by = b.offsetTop + b.offsetHeight / 2;
+      const ns = 'http://www.w3.org/2000/svg';
+      const g = document.createElementNS(ns, 'g');
+      g.setAttribute('class', 'conn');
+      // hit-area: invisible thick line for easier clicking
+      const hit = document.createElementNS(ns, 'line');
+      hit.setAttribute('x1', ax); hit.setAttribute('y1', ay);
+      hit.setAttribute('x2', bx); hit.setAttribute('y2', by);
+      hit.setAttribute('stroke', 'transparent');
+      hit.setAttribute('stroke-width', '14');
+      hit.setAttribute('pointer-events', 'stroke');
+      hit.style.cursor = 'pointer';
+      hit.addEventListener('click', () => {
+        conn.dashed = !conn.dashed;
+        renderArrows();
+        save();
+      });
+      // visible line
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', ax); line.setAttribute('y1', ay);
+      line.setAttribute('x2', bx); line.setAttribute('y2', by);
+      line.setAttribute('stroke', '#333');
+      line.setAttribute('stroke-width', '2');
+      if (conn.dashed) line.setAttribute('stroke-dasharray', '8 6');
+      line.setAttribute('marker-end', 'url(#arrow)');
+      line.setAttribute('pointer-events', 'none');
+      // midpoint
+      const mx = (ax + bx) / 2;
+      const my = (ay + by) / 2;
+      // perpendicular offset for delete button (so it doesn't overlap label)
+      const dx = bx - ax, dy = by - ay;
+      const len = Math.sqrt(dx*dx + dy*dy) || 1;
+      const px = -dy / len * 18;
+      const py = dx / len * 18;
+      // dblclick on hit-line edits label
+      hit.addEventListener('dblclick', (ev) => {
+        ev.stopPropagation();
+        editConnLabel(conn, mx, my);
+      });
+      // label
+      if (conn.label) {
+        const tw = Math.max(conn.label.length * 7 + 12, 24);
+        const labelBg = document.createElementNS(ns, 'rect');
+        labelBg.setAttribute('x', mx - tw/2);
+        labelBg.setAttribute('y', my - 10);
+        labelBg.setAttribute('width', tw);
+        labelBg.setAttribute('height', 20);
+        labelBg.setAttribute('fill', 'white');
+        labelBg.setAttribute('stroke', '#ccc');
+        labelBg.setAttribute('rx', '4');
+        const labelText = document.createElementNS(ns, 'text');
+        labelText.setAttribute('x', mx);
+        labelText.setAttribute('y', my);
+        labelText.setAttribute('text-anchor', 'middle');
+        labelText.setAttribute('dominant-baseline', 'central');
+        labelText.setAttribute('font-size', '12');
+        labelText.setAttribute('fill', '#333');
+        labelText.setAttribute('pointer-events', 'none');
+        labelText.textContent = conn.label;
+        g.appendChild(labelBg);
+        g.appendChild(labelText);
+      }
+      const delGroup = document.createElementNS(ns, 'g');
+      delGroup.setAttribute('class', 'del-svg');
+      const dcx = mx + px, dcy = my + py;
+      const circle = document.createElementNS(ns, 'circle');
+      circle.setAttribute('cx', dcx); circle.setAttribute('cy', dcy); circle.setAttribute('r', '10');
+      circle.setAttribute('fill', 'white'); circle.setAttribute('stroke', '#999');
+      const text = document.createElementNS(ns, 'text');
+      text.setAttribute('x', dcx); text.setAttribute('y', dcy);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('dominant-baseline', 'central');
+      text.setAttribute('font-size', '14');
+      text.setAttribute('font-weight', 'bold');
+      text.setAttribute('fill', '#666');
+      text.textContent = '×';
+      delGroup.appendChild(circle);
+      delGroup.appendChild(text);
+      delGroup.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const i = connections.indexOf(conn);
+        if (i >= 0) connections.splice(i, 1);
+        renderArrows();
+        save();
+      });
+      g.appendChild(hit);
+      g.appendChild(line);
+      g.appendChild(delGroup);
+      svg.appendChild(g);
+    });
+  }
+
+  function editConnLabel(conn, x, y) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = conn.label || '';
+    input.placeholder = 't.ex. Ja / Nej';
+    input.style.cssText = 'position: absolute; left: ' + (x - 70) + 'px; top: ' + (y - 14) + 'px; width: 140px; z-index: 100; font-size: 13px; padding: 4px 8px; border: 2px solid #0066ff; border-radius: 4px; text-align: center; background: white;';
+    canvas.appendChild(input);
+    input.focus();
+    input.select();
+    const finish = () => {
+      conn.label = input.value.trim();
+      input.remove();
+      renderArrows();
+      save();
+    };
+    input.addEventListener('blur', finish);
+    input.addEventListener('keydown', (ke) => {
+      if (ke.key === 'Enter' || ke.key === 'Escape') input.blur();
+    });
+  }
+
+  document.getElementById('export').onclick = exportSVG;
+
+  function escapeXml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function visualBounds(box) {
+    const x = box.offsetLeft, y = box.offsetTop;
+    const w = box.offsetWidth, h = box.offsetHeight;
+    if (box.classList.contains('decision')) {
+      const half = w / Math.SQRT2;
+      const cx = x + w / 2, cy = y + h / 2;
+      return { minX: cx - half, minY: cy - half, maxX: cx + half, maxY: cy + half };
+    }
+    return { minX: x, minY: y, maxX: x + w, maxY: y + h };
+  }
+
+  function exportSVG() {
+    const boxes = [...canvas.querySelectorAll('.box')];
+    if (boxes.length === 0) { alert('Inget att exportera. Lägg till minst en box först.'); return; }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    boxes.forEach(b => {
+      const vb = visualBounds(b);
+      if (vb.minX < minX) minX = vb.minX;
+      if (vb.minY < minY) minY = vb.minY;
+      if (vb.maxX > maxX) maxX = vb.maxX;
+      if (vb.maxY > maxY) maxY = vb.maxY;
+    });
+    const pad = 30;
+    const W = Math.ceil(maxX - minX + pad * 2);
+    const H = Math.ceil(maxY - minY + pad * 2);
+    const ox = -minX + pad, oy = -minY + pad;
+
+    let out = '<?xml version="1.0" encoding="UTF-8"?>';
+    out += '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">';
+    out += '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker></defs>';
+    out += '<rect width="' + W + '" height="' + H + '" fill="white"/>';
+
+    // arrows first (behind boxes)
+    connections.forEach(conn => {
+      const a = conn.from, b = conn.to;
+      const ax = a.offsetLeft + a.offsetWidth / 2 + ox;
+      const ay = a.offsetTop + a.offsetHeight / 2 + oy;
+      const bx = b.offsetLeft + b.offsetWidth / 2 + ox;
+      const by = b.offsetTop + b.offsetHeight / 2 + oy;
+      const dash = conn.dashed ? ' stroke-dasharray="8 6"' : '';
+      out += '<line x1="' + ax + '" y1="' + ay + '" x2="' + bx + '" y2="' + by + '" stroke="#333" stroke-width="2" marker-end="url(#arrow)"' + dash + '/>';
+      if (conn.label) {
+        const mx = (ax + bx) / 2, my = (ay + by) / 2;
+        const tw = Math.max(conn.label.length * 7 + 12, 24);
+        out += '<rect x="' + (mx - tw/2) + '" y="' + (my - 10) + '" width="' + tw + '" height="20" fill="white" stroke="#ccc" rx="4"/>';
+        out += '<text x="' + mx + '" y="' + my + '" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="12" fill="#333">' + escapeXml(conn.label) + '</text>';
+      }
+    });
+
+    // boxes
+    boxes.forEach(box => {
+      const x = box.offsetLeft + ox;
+      const y = box.offsetTop + oy;
+      const w = box.offsetWidth, h = box.offsetHeight;
+      const cx = x + w / 2, cy = y + h / 2;
+      const labelText = box.querySelector('.label').textContent;
+      if (box.classList.contains('decision')) {
+        const half = w / Math.SQRT2;
+        out += '<polygon points="' + cx + ',' + (cy - half) + ' ' + (cx + half) + ',' + cy + ' ' + cx + ',' + (cy + half) + ' ' + (cx - half) + ',' + cy + '" fill="white" stroke="#333" stroke-width="2"/>';
+      } else if (box.classList.contains('terminator')) {
+        out += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="' + (h/2) + '" fill="white" stroke="#333" stroke-width="2"/>';
+      } else {
+        out += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="8" fill="white" stroke="#333" stroke-width="2"/>';
+      }
+      out += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="14" fill="#333">' + escapeXml(labelText) + '</text>';
+    });
+
+    out += '</svg>';
+
+    const blob = new Blob([out], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'process-' + new Date().toISOString().slice(0, 10) + '.svg';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // ===== Persistens =====
+  function getState() {
+    return {
+      counter,
+      boxes: [...canvas.querySelectorAll('.box')].map(b => ({
+        id: b.dataset.id,
+        shape: b.classList.contains('decision') ? 'decision' : b.classList.contains('terminator') ? 'terminator' : 'process',
+        label: b.querySelector('.label').textContent,
+        x: b.offsetLeft,
+        y: b.offsetTop
+      })),
+      conns: connections.map(c => ({
+        from: c.from.dataset.id,
+        to: c.to.dataset.id,
+        dashed: !!c.dashed,
+        label: c.label || ''
+      }))
+    };
+  }
+
+  function save() {
+    if (loading) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(getState()));
+    } catch (e) { console.warn('Save failed', e); }
+  }
+
+  function loadState(state) {
+    loading = true;
+    [...canvas.querySelectorAll('.box')].forEach(b => b.remove());
+    connections.length = 0;
+    selected = null;
+    counter = state.counter || 0;
+    const byId = {};
+    (state.boxes || []).forEach(bs => {
+      byId[bs.id] = createBox(bs.shape, bs.label, bs.x, bs.y, bs.id);
+    });
+    (state.conns || []).forEach(cs => {
+      const f = byId[cs.from], t = byId[cs.to];
+      if (f && t) connections.push({ from: f, to: t, dashed: !!cs.dashed, label: cs.label || '' });
+    });
+    loading = false;
+    renderArrows();
+  }
+
+  function loadFromStorage() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const state = JSON.parse(raw);
+      loadState(state);
+    } catch (e) { console.warn('Load failed', e); }
+  }
+
+  // Buttons
+  document.getElementById('clear').onclick = () => {
+    if (!confirm('Rensa hela canvas?')) return;
+    loading = true;
+    [...canvas.querySelectorAll('.box')].forEach(b => b.remove());
+    connections.length = 0;
+    selected = null;
+    counter = 0;
+    loading = false;
+    renderArrows();
+    save();
+  };
+
+  document.getElementById('export-json').onclick = () => {
+    const blob = new Blob([JSON.stringify(getState(), null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'process-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  document.getElementById('import-btn').onclick = () => {
+    document.getElementById('import-file').click();
+  };
+
+  document.getElementById('import-file').onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const state = JSON.parse(ev.target.result);
+        loadState(state);
+        save();
+      } catch (err) {
+        alert('Kunde inte läsa fil: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Auto-load on page load
+  loadFromStorage();
+</script>
+</body>
+</html>
