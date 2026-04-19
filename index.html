@@ -2,26 +2,33 @@
 <html lang="sv">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Process Drawer</title>
 <style>
-  body { margin: 0; font-family: -apple-system, sans-serif; }
-  header { padding: 12px 16px; background: #f5f5f7; border-bottom: 1px solid #ddd; display: flex; align-items: center; gap: 16px; }
-  button { padding: 8px 14px; font-size: 14px; cursor: pointer; border: 1px solid #333; background: white; border-radius: 6px; }
+  html, body { height: 100%; }
+  body { margin: 0; font-family: -apple-system, sans-serif; -webkit-text-size-adjust: 100%; overscroll-behavior: none; display: flex; flex-direction: column; }
+  header { padding: 10px 14px; background: #f5f5f7; border-bottom: 1px solid #ddd; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 0 0 auto; }
+  button { padding: 10px 14px; font-size: 14px; cursor: pointer; border: 1px solid #333; background: white; border-radius: 6px; touch-action: manipulation; }
   button:hover { background: #eee; }
   .hint { color: #666; font-size: 13px; }
-  #canvas { position: relative; width: 100vw; height: calc(100vh - 50px); overflow: hidden; background: #fafafa; background-image: radial-gradient(circle, #ddd 1px, transparent 1px); background-size: 20px 20px; }
+  @media (max-width: 600px) { .hint { display: none; } button { padding: 12px; font-size: 15px; } }
+  #canvas { position: relative; flex: 1 1 auto; overflow: hidden; background: #fafafa; background-image: radial-gradient(circle, #ddd 1px, transparent 1px); background-size: 20px 20px; touch-action: none; }
   #arrows { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-  .box { position: absolute; padding: 14px 22px; background: white; border: 2px solid #333; border-radius: 8px; cursor: move; user-select: none; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: center; min-width: 80px; }
+  .box { position: absolute; padding: 14px 22px; background: white; border: 2px solid #333; border-radius: 8px; cursor: move; user-select: none; -webkit-user-select: none; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: center; min-width: 80px; touch-action: none; }
   .box.selected { border-color: #0066ff; background: #e6f0ff; box-shadow: 0 0 0 3px rgba(0,102,255,0.2); }
   .box.decision { width: 110px; height: 110px; border-radius: 0; transform: rotate(45deg); padding: 0; }
   .box.decision span { transform: rotate(-45deg); display: block; }
   .box.terminator { border-radius: 999px; padding: 14px 28px; }
-  .box .del { position: absolute; top: 4px; right: 6px; width: 18px; height: 18px; border-radius: 50%; background: white; border: 1px solid #bbb; color: #666; display: none; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; line-height: 1; font-weight: bold; }
+  .box .del { position: absolute; top: 4px; right: 6px; width: 22px; height: 22px; border-radius: 50%; background: white; border: 1px solid #bbb; color: #666; display: none; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; line-height: 1; font-weight: bold; touch-action: manipulation; }
   .box:hover .del { display: flex; }
   .box.decision .del { transform: rotate(-45deg); top: 4px; right: 4px; }
   .box .label[contenteditable="true"] { outline: 2px solid #0066ff; padding: 2px 4px; border-radius: 3px; cursor: text; background: white; }
   g.conn .del-svg { opacity: 0; pointer-events: none; transition: opacity 0.15s; }
   g.conn:hover .del-svg { opacity: 1; pointer-events: auto; cursor: pointer; }
+  @media (hover: none) {
+    .box .del { display: flex; }
+    g.conn .del-svg { opacity: 1; pointer-events: auto; cursor: pointer; }
+  }
 </style>
 </head>
 <body>
@@ -70,7 +77,7 @@
     del.className = 'del';
     del.textContent = '×';
     del.title = 'Ta bort';
-    del.addEventListener('mousedown', (e) => e.stopPropagation());
+    del.addEventListener('pointerdown', (e) => e.stopPropagation());
     del.addEventListener('click', (e) => { e.stopPropagation(); removeBox(box); });
     box.appendChild(del);
     box.style.left = x + 'px';
@@ -93,7 +100,7 @@
   });
 
   function makeEditable(box, label) {
-    box.addEventListener('dblclick', (e) => {
+    const startEdit = () => {
       if (selected) { selected.classList.remove('selected'); selected = null; }
       label.contentEditable = 'true';
       label.focus();
@@ -114,7 +121,9 @@
       };
       label.addEventListener('blur', finish);
       label.addEventListener('keydown', onKey);
-    });
+    };
+    box._startEdit = startEdit;
+    box.addEventListener('dblclick', startEdit);
   }
 
   function removeBox(box) {
@@ -130,16 +139,19 @@
   }
 
   function makeDraggable(box) {
-    box.addEventListener('mousedown', (e) => {
+    box.addEventListener('pointerdown', (e) => {
       if (e.target.classList.contains('del')) return;
       if (e.target.getAttribute('contenteditable') === 'true') return;
       const startLeft = box.offsetLeft;
       const startTop = box.offsetTop;
       const startMx = e.clientX;
       const startMy = e.clientY;
+      const pid = e.pointerId;
       let moved = false;
+      try { box.setPointerCapture(pid); } catch (_) {}
 
       const onMove = (ev) => {
+        if (ev.pointerId !== pid) return;
         const dx = ev.clientX - startMx;
         const dy = ev.clientY - startMy;
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
@@ -147,18 +159,34 @@
         box.style.top = (startTop + dy) + 'px';
         renderArrows();
       };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+      const onUp = (ev) => {
+        if (ev.pointerId !== pid) return;
+        box.removeEventListener('pointermove', onMove);
+        box.removeEventListener('pointerup', onUp);
+        box.removeEventListener('pointercancel', onUp);
+        try { box.releasePointerCapture(pid); } catch (_) {}
         if (!moved) handleClick(box); else save();
       };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      box.addEventListener('pointermove', onMove);
+      box.addEventListener('pointerup', onUp);
+      box.addEventListener('pointercancel', onUp);
       e.preventDefault();
     });
   }
 
+  let lastTapBox = null;
+  let lastTapTime = 0;
+  let lastTapConn = null;
+  let lastTapConnTime = 0;
   function handleClick(box) {
+    const now = Date.now();
+    if (lastTapBox === box && now - lastTapTime < 350) {
+      lastTapBox = null;
+      if (box._startEdit) box._startEdit();
+      return;
+    }
+    lastTapBox = box;
+    lastTapTime = now;
     if (!selected) {
       selected = box;
       box.classList.add('selected');
@@ -194,6 +222,14 @@
       hit.setAttribute('pointer-events', 'stroke');
       hit.style.cursor = 'pointer';
       hit.addEventListener('click', () => {
+        const now = Date.now();
+        if (lastTapConn === conn && now - lastTapConnTime < 350) {
+          lastTapConn = null;
+          editConnLabel(conn, mx, my);
+          return;
+        }
+        lastTapConn = conn;
+        lastTapConnTime = now;
         conn.dashed = !conn.dashed;
         renderArrows();
         save();
@@ -215,11 +251,7 @@
       const len = Math.sqrt(dx*dx + dy*dy) || 1;
       const px = -dy / len * 18;
       const py = dx / len * 18;
-      // dblclick on hit-line edits label
-      hit.addEventListener('dblclick', (ev) => {
-        ev.stopPropagation();
-        editConnLabel(conn, mx, my);
-      });
+      // Double-tap on hit edits label (handled in click handler below for both mouse + touch).
       // label
       if (conn.label) {
         const tw = Math.max(conn.label.length * 7 + 12, 24);
