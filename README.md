@@ -4,7 +4,7 @@ description: Minimal drag-och-släpp processritare i en HTML-fil. Noll dependenc
 category: tool
 status: live
 last_updated: 2026-04-19
-sections: [Vad är det, Funktioner, Använd den, Hur det byggdes, Teknik]
+sections: [Vad är det, Funktioner, Använd den, Hur det byggdes, Teknik, Licens]
 ---
 
 # Process Drawer
@@ -22,13 +22,14 @@ Hela appen är **en HTML-fil** med inline JS och CSS. Inga bibliotek, ingen buil
 ## Funktioner
 
 - **3 shape-typer**: Process (rektangel), Beslut (romb), Start/Slut (oval)
-- **2 pil-typer**: Solid eller streckad (klicka pilen för att växla)
-- **Pil-etiketter**: Dubbelklick på pil för att lägga till t.ex. "Ja" / "Nej"
-- **Redigera text**: Dubbelklick på en box för att byta namn
-- **Ta bort**: Hover över box eller pil → ✕-knapp
+- **2 pil-typer**: Solid eller streckad (klicka/tappa pilen för att växla)
+- **Pil-etiketter**: Dubbelklick/dubbeltap på pil för att lägga till t.ex. "Ja" / "Nej"
+- **Redigera text**: Dubbelklick/dubbeltap på en box för att byta namn
+- **Ta bort**: ✕-knapp på box eller pil (syns alltid på touch, vid hover på desktop)
 - **Auto-save**: Allt sparas i `localStorage` vid varje förändring
 - **JSON-import/export**: Spara till fil, ladda från fil, dela med andra
 - **SVG-export**: Ladda ner ditt diagram som .svg (öppnas i webbläsare/Figma/etc)
+- **Mobil + desktop**: Pointer Events under huven, fungerar likvärdigt med mus och touch
 
 ## Använd den
 
@@ -41,13 +42,14 @@ Hela appen är **en HTML-fil** med inline JS och CSS. Inga bibliotek, ingen buil
 
 ## Hur det byggdes
 
-Byggt iterativt i 5 steg via Claude Code, totalt ca 30 minuters implementationstid:
+Byggt iterativt i 6 steg via Claude Code:
 
 1. **Drag-drop boxar + pilar** — kärnfunktionen
 2. **Shape-typer + pil-typer** — uttrycksfullhet
 3. **Edit + delete** — från demo till användbart
 4. **Pil-etiketter + SVG-export** — polish + sharing
 5. **Persistens** — auto-save + JSON I/O
+6. **Mobilstöd** — Pointer Events, touch-targets, dubbeltap
 
 Varje iteration startade med en hypotes ("kan användaren X på under Y sekunder?"), byggde minsta möjliga, och verifierades manuellt innan nästa.
 
