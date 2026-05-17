@@ -1,17 +1,27 @@
----
-title: Process Drawer
-description: Minimal drag-och-släpp processritare i en HTML-fil. Noll dependencies.
-category: tool
-status: live
-last_updated: 2026-04-19
-sections: [Vad är det, Funktioner, Använd den, Hur det byggdes, Teknik, Licens]
----
-
 # Process Drawer
 
-En enkel processritare för att rita organisationsprocesser. Drag-och-släpp boxar, koppla med pilar, lägg till etiketter, exportera till SVG. Allt sparas automatiskt i webbläsaren.
+> En processritare i en HTML-fil. Noll dependencies, noll build, noll backend. Klistra in i en mapp eller öppna live.
 
-**Live demo:** https://cola500.github.io/process-drawer/
+🔗 **Live:** [cola500.github.io/process-drawer](https://cola500.github.io/process-drawer/)
+
+<!-- TODO: lägg in en screenshot av verktyget med en exempel-process
+     (5-6 boxar, ett beslut, "Ja"/"Nej"-pilar). Tag den direkt från
+     live-demon, exportera som SVG, screenshota. -->
+
+Ibland behöver man rita en process snabbt — i ett möte, för en kollega, i ett retro — och man vill inte starta Miro, Lucid eller en Figma-fil. Det här verktyget öppnar man, ritar i, exporterar SVG och stänger. Allt sparas automatiskt i webbläsaren.
+
+Hela appen är **en HTML-fil** med inline JS och CSS. Det är medvetet det. Inga frameworks, inga build-steg, ingen leverantörsupplåsning.
+
+## Vad detta repo visar
+
+- **"Hur lite räcker?"-disciplin** — verktyget hade kunnat byggas i React med Tailwind med Tauri-wrapper. Det blev en HTML-fil. Beslutet är värt mer än koden.
+- **Vertikala slices i sju steg** — README beskriver hur det byggdes iterativt, en hypotes per slice ("kan användaren X på under Y sekunder?"). Bygg → verifiera → nästa.
+- **Pointer Events från start** — fungerar likvärdigt med mus och touch, utan branching. Liten teknisk detalj, stor signal om hantverk.
+- **Auto-save + JSON I/O + SVG-export** — användarsäker design med små medel.
+
+Byggt för egen del när inget annat verktyg kändes lagom — och kvar för att det fortfarande är det.
+
+---
 
 ## Vad är det
 
